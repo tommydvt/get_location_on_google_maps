@@ -1,27 +1,14 @@
+
 import 'package:flutter/material.dart';
 import 'package:gps_task_app/google_map_view_model.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
 
-class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+class MyAppState extends ChangeNotifier {
+  String currentCity = "Unknown City";
 
-  @override
-  State<MapScreen> createState() => _MapScreenState();
-}
-
-class _MapScreenState extends State<MapScreen> {
-    late final Future<LatLng> _mapLoadedFuture;
-  final viewModel = GoogleMapViewModel();
-  String? cityName;
-
-  @override
-  void initState() {
-    super.initState();
-    _mapLoadedFuture = viewModel.loadCurrentUserCoordinates();
-  }
-
-  Future<void> fetchCityName(LatLng coordinates) async {
+  setCurrentCity(LatLng coordinates) async {
     try {
       final addresses = await placemarkFromCoordinates(
         coordinates.latitude,
@@ -30,70 +17,90 @@ class _MapScreenState extends State<MapScreen> {
 
       if (addresses.isNotEmpty) {
         final firstAddress = addresses.first;
-        setState(() {
-          cityName = firstAddress.locality ?? "Unknown City";
-        });
+        currentCity = firstAddress.locality ?? "Unknown City";
       } else {
-        setState(() {
-          cityName = "Unknown City";
-        });
+        currentCity = "Unknown City";
       }
+      notifyListeners();
     } catch (e) {
-      setState(() {
-        cityName = "Unknown City";
-      });
+      currentCity = "Unknown City";
+      notifyListeners();
     }
+  }
+}
+
+class NewMapScreen extends StatelessWidget {
+  const NewMapScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Column(children: [MapWidget(), CityWidget()]),
+    );
+  }
+}
+
+class MapWidget extends StatefulWidget {
+  const MapWidget({super.key});
+
+  @override
+  State<MapWidget> createState() => _MapWidgetState();
+}
+
+class _MapWidgetState extends State<MapWidget> {
+  late final Future<LatLng> _mapLoadedFuture;
+  final viewModel = GoogleMapViewModel();
+
+  @override
+  void initState() {
+    super.initState();
+    _mapLoadedFuture = viewModel.loadCurrentUserCoordinates();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          Expanded(
-            flex: 1,
-            child: FutureBuilder(
-              future: _mapLoadedFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      snapshot.error.toString(),
-                    ),
-                  );
-                }
-
-                fetchCityName(snapshot.data as LatLng);
-
-                return GoogleMapWidget(
-                  currentUserLocation: snapshot.data as LatLng,
-                  onMapCreated: (controller) {
-                    viewModel.controller.complete(controller);
-                  },
+    var appState = context.watch<MyAppState>();
+    return Expanded(
+        flex: 1,
+        child: FutureBuilder(
+            future: _mapLoadedFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(),
                 );
-              },
-            ),
+              } else if (snapshot.hasError) {
+                return Center(child: Text(snapshot.error.toString()));
+              } else {
+                return GoogleMapWidget(
+                    onMapCreated: (controller) {
+                      appState.setCurrentCity(snapshot.data as LatLng);
+                      viewModel.controller.complete(controller);
+                    },
+                    currentUserLocation: snapshot.data as LatLng);
+              }
+            }));
+  }
+}
+
+class CityWidget extends StatelessWidget {
+  const CityWidget({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    var appState = context.watch<MyAppState>();
+    return Expanded(
+      flex: 2,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'You are located in ${appState.currentCity}',
+            style: const TextStyle(fontSize: 24),
           ),
-          Expanded(
-            flex: 2,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'You are located in ${cityName ?? "Unknown City"}',
-                  style: TextStyle(fontSize: 24),
-                ),
-                SizedBox(height: 16),
-               
-              ],
-            ),
-          ),
+          const SizedBox(height: 16),
         ],
       ),
     );
